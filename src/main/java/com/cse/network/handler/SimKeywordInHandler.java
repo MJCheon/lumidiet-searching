@@ -1,5 +1,6 @@
 package com.cse.network.handler;
 
+import com.cse.module.DocSearchModule;
 import com.cse.network.data.OutboundData;
 import com.cse.network.data.SimKeywordMethod;
 import com.cse.network.data.SynKeywordResData;
@@ -27,13 +28,13 @@ public class SimKeywordInHandler extends SimpleChannelInboundHandler<Object> {
             //Word2Vec을 이용하여 유사 주제어 찾기 기능을 수행한다.
             Word2VecInstance.getInstance().getSymKeyword(method.getSearchKeyword(), new IFindKeyword() {
                 @Override
-                public void error() {
-                    channelHandlerContext.pipeline().write(new BadRequestResponse());
+                public void findSynData(OutboundData synData) {
+                    channelHandlerContext.pipeline().write(new SynKeywordResData(synData));
                 }
 
                 @Override
-                public void findSynData(OutboundData synData) {
-                    channelHandlerContext.pipeline().write(new SynKeywordResData(synData));
+                public void error() {
+                    channelHandlerContext.pipeline().write(new BadRequestResponse());
                 }
             });
         }

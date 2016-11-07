@@ -18,13 +18,13 @@ import java.util.Queue;
 public class Word2VecInstance extends Thread {
     private static DocSearchModule docSearchModule;
     private static Word2VecInstance word2VecInstance;
-    private static Word2VecModel model;
     private Queue queue;
 
     /**
      * Singleton 객체인 Word2VecInstance를 리턴한다.
      * @return Word2VecInstance
      */
+
     public static Word2VecInstance getInstance() {
         //Word2VecInstance가 초기화되지 않았다면 초기화 후 리턴한다.
         if (word2VecInstance == null)
@@ -37,9 +37,7 @@ public class Word2VecInstance extends Thread {
      */
     private Word2VecInstance() {
         //model이 null일 경우 load한다.
-        if (model == null) {
-            model = Word2VecModel.load("./w2model");
-            model.getVectors().show();
+        if (docSearchModule == null) {
             docSearchModule = new DocSearchModule();
             queue = new LinkedList();
         }
@@ -58,7 +56,6 @@ public class Word2VecInstance extends Thread {
      * 실제 처리 loop
      */
     public void run() {
-
         while (true) {
             //처리할 데이터가 존재한다면 처리한다.
             if (!queue.isEmpty()) {
@@ -81,16 +78,7 @@ public class Word2VecInstance extends Thread {
             try {
                 //유사 키워드를 검색하여 Row배열에 저장한다(Collect)
 
-                Row[] rowList = model.findSynonyms(data.getKeyword(), 10).select("word", "similarity").collect();
-                ArrayList<String> symKeywordList = new ArrayList<String>();
-
-                String query = "";
-                //검색 결과를 결과 리스트에 삽입
-                for (Row row : rowList) {
-                    symKeywordList.add(row.getString(0));
-                    query += row.getString(0) + " ";
-                }
-                OutboundData synData = null;
+                OutboundData synData = docSearchModule.search(data.getKeyword());
 
                 //콜백 메서드 실행
                 data.getListener().findSynData(synData);

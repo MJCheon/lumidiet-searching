@@ -12,9 +12,9 @@ public class Spark implements Serializable {
     private static JavaSparkContext javaSparkContext;
     public static SparkConf sparkConf;
     public static final String APP_NAME = "lumidiet-searching";
-    public static final String LOCAL_MASTER = "local[4]";
+    public static final String LOCAL_MASTER = "local[8]";
     public static final String MASTER = "";
-    public static final int NUM_CORE = 4;
+    public static final int NUM_CORE = 8;
     public static boolean isLocal = true;
 
     static{
@@ -29,10 +29,10 @@ public class Spark implements Serializable {
         else{
             sparkConf = new SparkConf().setAppName(APP_NAME).setMaster(LOCAL_MASTER);
             sparkConf.set("spark.rpc.askTimeout", "120");
-            sparkConf.set("spark.default.parallelism", "4");
-            sparkConf.set("spark.driver.memory", "8g");
-            sparkConf.set("spark.executor.memory", "8g");
-            sparkConf.set("spark.executor.cores", "4");
+            sparkConf.set("spark.default.parallelism", "8");
+            sparkConf.set("spark.driver.memory", "16g");
+            sparkConf.set("spark.executor.memory", "16g");
+            sparkConf.set("spark.executor.cores", "8");
         }
         javaSparkContext = new JavaSparkContext(sparkConf);
     }

@@ -14,11 +14,11 @@ import java.util.Properties;
  */
 public class SparkJDBC implements Serializable {
     private static final String JDBC_PREFIX = "jdbc:mysql://";
-    private static final String DB_HOST = "52.78.166.57";
+    private static final String DB_HOST = "52.78.215.248";
     private static final String DB_PORT = "3306";
     private static final String DB_NAME = "lumi";
     public static final String DB_USER = "root";
-    public static final String DB_PW = "cse";
+    public static final String DB_PW = "cmj92";
     public static Properties SQL_PROPERTIES;
     public static final String TABLE_PAGE = "page";
     public static final String TABLE_DOCWORD = "docword";

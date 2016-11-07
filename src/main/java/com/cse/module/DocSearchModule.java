@@ -1,10 +1,8 @@
 package com.cse.module;
 
-import com.cse.common.LogInstance;
-import com.cse.entity.DocVector;
-import com.cse.entity.SearchWord;
-import com.cse.entity.Word;
-import com.cse.entity.WordVector;
+import com.cse.entity.*;
+import com.cse.network.data.OutboundData;
+import com.cse.processor.WordExtractor;
 import com.cse.spark.Spark;
 import com.cse.spark.SparkJDBC;
 import com.twitter.penguin.korean.TwitterKoreanProcessorJava;
@@ -20,8 +18,7 @@ import scala.Tuple2;
 import scala.collection.Seq;
 
 import java.io.Serializable;
-import java.sql.Connection;
-import java.sql.ResultSet;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
@@ -32,8 +29,8 @@ public class DocSearchModule implements Serializable{
     private JavaPairRDD<Integer, DocVector> docVectorPairRDD;
     private JavaPairRDD<String, Word> indexedWordPairRDD;
     private JavaPairRDD<String, WordVector> wordVectorPairRDD;
-    private JavaPairRDD<String, WordVector> wordPairRDD;
-    private double TFIDF_MAX_VALUE;
+    private JavaPairRDD<String, WordVector> docWordPairRDD;
+    private JavaPairRDD<Integer, Page> pageRDD;
     private Word2VecModel model;
 
     public DocSearchModule(){
@@ -41,28 +38,8 @@ public class DocSearchModule implements Serializable{
     }
 
     private void init(){
-
         initWordVector();
         initDocVectorRDD();
-    }
-
-    private void initMaxTfidf(){
-        Connection connection = null;
-        try{
-            connection = SparkJDBC.getMysqlConnection();
-            String sql = "select max(tfidf) from docword";
-            ResultSet resultSet = connection.prepareStatement(sql).executeQuery();
-
-            while(resultSet.next()){
-                TFIDF_MAX_VALUE = resultSet.getDouble(1);
-            }
-
-            resultSet.close();
-            connection.close();
-        }
-        catch (Exception e){
-            LogInstance.getLogger().debug(e.getMessage());
-        }
     }
 
     private void initWordVector(){
@@ -84,10 +61,8 @@ public class DocSearchModule implements Serializable{
         indexedWordPairRDD.cache();
         indexedWordPairRDD.count();
 
-        initMaxTfidf();
-
         model = Word2VecModel.load("./w2model");
-        wordPairRDD = model.getVectors().select("word", "vector").toJavaRDD().repartition(Spark.NUM_CORE).mapToPair(new PairFunction<Row, String, WordVector>() {
+        docWordPairRDD = model.getVectors().select("word", "vector").toJavaRDD().repartition(Spark.NUM_CORE).mapToPair(new PairFunction<Row, String, WordVector>() {
             @Override
             public Tuple2<String, WordVector> call(Row row) throws Exception {
                 String word = row.getString(0);
@@ -96,7 +71,7 @@ public class DocSearchModule implements Serializable{
             }
         });
 
-        wordVectorPairRDD = wordPairRDD.repartition(Spark.NUM_CORE).join(indexedWordPairRDD).groupByKey().mapToPair(new PairFunction<Tuple2<String, Iterable<Tuple2<WordVector, Word>>>, String, WordVector>() {
+        wordVectorPairRDD = docWordPairRDD.repartition(Spark.NUM_CORE).join(indexedWordPairRDD).groupByKey().mapToPair(new PairFunction<Tuple2<String, Iterable<Tuple2<WordVector, Word>>>, String, WordVector>() {
             @Override
             public Tuple2<String, WordVector> call(Tuple2<String, Iterable<Tuple2<WordVector, Word>>> stringIterableTuple2) throws Exception {
                 double tfidf = 0;
@@ -110,7 +85,6 @@ public class DocSearchModule implements Serializable{
                 }
 
                 tfidf /= (double) tfidfCnt;
-                tfidf = TFIDF_MAX_VALUE - tfidf;
 
                 for(int i = 0; i< DocVector.dimension; i++)
                     wordVector[i] *= tfidf;
@@ -124,6 +98,21 @@ public class DocSearchModule implements Serializable{
     }
 
     private void initDocVectorRDD() {
+        pageRDD = SparkJDBC.getSqlReader(SparkJDBC.TABLE_PAGE).select("id", "url", "title", "body", "date").toJavaRDD().repartition(Spark.NUM_CORE).mapToPair(new PairFunction<Row, Integer, Page>() {
+            @Override
+            public Tuple2<Integer, Page> call(Row row) throws Exception {
+                int id = row.getInt(0);
+                String url = row.getString(1);
+                String title = row.getString(2);
+                String body = row.getString(3);
+                long date = row.getLong(4);
+                return new Tuple2<Integer, Page>(id, new Page(id, url, title, body, date));
+            }
+        });
+
+        pageRDD.cache();
+        pageRDD.count();
+
         JavaPairRDD<Integer, Iterable<Word>> pairDocWordRDD = indexedWordPairRDD.join(wordVectorPairRDD).repartition(Spark.NUM_CORE).mapToPair(new PairFunction<Tuple2<String, Tuple2<Word, WordVector>>, Integer, Word>() {
             @Override
             public Tuple2<Integer, Word> call(Tuple2<String, Tuple2<Word, WordVector>> stringTuple2Tuple2) throws Exception {
@@ -142,7 +131,7 @@ public class DocSearchModule implements Serializable{
                 for(Word word : integerIterableTuple2._2()){
                     wordCnt++;
                     double[] wordVec = word.getVector().toArray();
-                    double tfidf = TFIDF_MAX_VALUE - word.getTfidf();
+                    double tfidf = word.getTfidf();
 
                     for(int i = 0; i< DocVector.dimension; i++)
                         docVec[i] += (wordVec[i] * tfidf);
@@ -158,11 +147,23 @@ public class DocSearchModule implements Serializable{
             }
         });
 
+        docVectorPairRDD = docVectorPairRDD.join(pageRDD).mapToPair(new PairFunction<Tuple2<Integer, Tuple2<DocVector, Page>>, Integer, DocVector>() {
+            @Override
+            public Tuple2<Integer, DocVector> call(Tuple2<Integer, Tuple2<DocVector, Page>> integerTuple2Tuple2) throws Exception {
+                DocVector docVector = new DocVector(integerTuple2Tuple2._1());
+                docVector.setDocVector(integerTuple2Tuple2._2()._1().getDocVector());
+                docVector.setPageId(integerTuple2Tuple2._2()._1().getPageId());
+                docVector.setPage(integerTuple2Tuple2._2()._2());
+                return new Tuple2<Integer, DocVector>(integerTuple2Tuple2._1(), docVector);
+            }
+        });
+
         docVectorPairRDD.cache();
         docVectorPairRDD.count();
     }
 
-    public void getRelativeWord(SearchWord searchWord){
+    public ArrayList<String> getRelativeWord(SearchWord searchWord){
+        ArrayList<String> simWords = new ArrayList<>();
         final double[] wordVec = searchWord.getVector().toArray();
         final HashSet<String> searchWordList = searchWord.getWordIdxList();
 
@@ -185,9 +186,12 @@ public class DocSearchModule implements Serializable{
                 return new Tuple2<Double, WordVector>(similarity,stringWordVectorTuple2._2());
             }
         }).sortByKey(true).take(10);
-        for (Tuple2<Double, WordVector> doubleWordVectorTuple2 : similarWordList) {
-            System.out.println(doubleWordVectorTuple2._2().getWord());
+        for(int i=0; i<similarWordList.size(); i++) {
+            simWords.add(i, similarWordList.get(i)._2().getWord());
+            System.out.println(similarWordList.get(i)._2().getWord());
         }
+
+        return simWords;
     }
 
     private SearchWord getQueryVector(String query){
@@ -219,26 +223,26 @@ public class DocSearchModule implements Serializable{
     private HashSet<String> splitQueryString(String query){
         HashSet<String> hashSet = new HashSet<>();
 
-        CharSequence normalized = TwitterKoreanProcessorJava.normalize(query);
+        WordExtractor wordExtractor = new WordExtractor();
+        List<Word> words = wordExtractor.extractWordFromParagraph(0, query);
 
-        Seq<KoreanTokenizer.KoreanToken> tokens = TwitterKoreanProcessorJava.tokenize(normalized);
-
-        for (String str : TwitterKoreanProcessorJava.tokensToJavaStringList(tokens)) {
-            if(!hashSet.contains(str)&&str.length()>1)
-                hashSet.add(str);
+        for(Word word : words){
+            String strWord = word.getWord();
+            hashSet.add(strWord);
         }
 
         return hashSet;
     }
 
-    public void search(String query) {
+    public OutboundData search(String query) {
         SearchWord searchWord = getQueryVector(query);
 
-        getRelativeWord(searchWord);
-//        getRelativeDoc(docSearch);
+        OutboundData outboundData = new OutboundData(getRelativeWord(searchWord), getRelativeDoc(searchWord));
+        return outboundData;
     }
 
-    private void getRelativeDoc(SearchWord searchWord){
+    private ArrayList<Page> getRelativeDoc(SearchWord searchWord){
+        ArrayList<Page> simDoc = new ArrayList<>();
         final double[] swVec = searchWord.getVector().toArray();
         List<Tuple2<Double, DocVector>> docList = docVectorPairRDD.mapToPair(new PairFunction<Tuple2<Integer, DocVector>, Double, DocVector>() {
             @Override
@@ -251,8 +255,9 @@ public class DocSearchModule implements Serializable{
                 return new Tuple2<Double, DocVector>(similarity, integerDocVectorTuple2._2());
             }
         }).sortByKey(true).take(10);
-        for(Tuple2<Double, DocVector> tuple : docList){
-            System.out.println(tuple._2().getPageId());
+        for(int i=0; i<docList.size(); i++) {
+            simDoc.add(i, docList.get(i)._2().getPage());
         }
+        return simDoc;
     }
 }

@@ -1,5 +1,7 @@
 package com.cse.network.data;
 
+import com.cse.entity.Page;
+
 import java.util.ArrayList;
 
 /**
@@ -7,9 +9,9 @@ import java.util.ArrayList;
  */
 public class OutboundData {
     ArrayList<String> simKeywordList;
-    ArrayList<Integer> simPageList;
+    ArrayList<Page> simPageList;
 
-    public OutboundData(ArrayList<String> simKeywordList, ArrayList<Integer> simPageList){
+    public OutboundData(ArrayList<String> simKeywordList, ArrayList<Page> simPageList){
         this.simKeywordList = simKeywordList;
         this.simPageList = simPageList;
     }
@@ -22,11 +24,11 @@ public class OutboundData {
         return this.simKeywordList;
     }
 
-    public void setSimPageList(ArrayList<Integer> simPageList){
+    public void setSimPageList(ArrayList<Page> simPageList){
         this.simPageList = simPageList;
     }
 
-    public ArrayList<Integer> getSimPageList(){
+    public ArrayList<Page> getSimPageList(){
         return this.simPageList;
     }
 }

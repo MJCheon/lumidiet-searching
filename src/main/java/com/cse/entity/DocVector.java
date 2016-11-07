@@ -12,6 +12,7 @@ public class DocVector implements Serializable{
     private int pageId;
     private ArrayList<TfIdfWord> wordIdxList;
     private Vector docVector;
+    private Page page;
     public static final int dimension = 200;
 
     public DocVector(int pageId){
@@ -41,5 +42,13 @@ public class DocVector implements Serializable{
 
     public Vector getDocVector(){
         return this.docVector;
+    }
+
+    public void setPage(Page page){
+        this.page = page;
+    }
+
+    public Page getPage(){
+        return this.page;
     }
 }
