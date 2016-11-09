@@ -46,17 +46,4 @@ public class SparkJDBC implements Serializable {
     public static DataFrame getSqlReader(String table){
         return getSQLContext().read().jdbc(DB_URL, table, SQL_PROPERTIES);
     }
-
-    public static Connection getMysqlConnection() throws Exception{
-        if(SQL_PROPERTIES == null)
-            initSqlProperties();
-        Class.forName("com.mysql.cj.jdbc.Driver");
-        return DriverManager.getConnection(DB_URL, DB_USER, DB_PW);
-    }
-
-    public static void saveDataFrame(DataFrame dataFrame,String table){
-        if (SQL_PROPERTIES == null)
-            initSqlProperties();
-        dataFrame.write().mode(SaveMode.Append).jdbc(DB_URL, table, SQL_PROPERTIES);
-    }
 }

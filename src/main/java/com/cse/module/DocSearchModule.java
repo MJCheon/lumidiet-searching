@@ -1,12 +1,10 @@
 package com.cse.module;
 
+import com.cse.common.LogInstance;
 import com.cse.entity.*;
-import com.cse.network.data.OutboundData;
 import com.cse.processor.WordExtractor;
 import com.cse.spark.Spark;
 import com.cse.spark.SparkJDBC;
-import com.twitter.penguin.korean.TwitterKoreanProcessorJava;
-import com.twitter.penguin.korean.tokenizer.KoreanTokenizer;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.PairFunction;
@@ -15,7 +13,6 @@ import org.apache.spark.mllib.linalg.DenseVector;
 import org.apache.spark.mllib.linalg.Vector;
 import org.apache.spark.sql.Row;
 import scala.Tuple2;
-import scala.collection.Seq;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -26,14 +23,21 @@ import java.util.List;
  * Created by bullet on 16. 10. 25.
  */
 public class DocSearchModule implements Serializable{
+    private static DocSearchModule instance;
+
     private JavaPairRDD<Integer, DocVector> docVectorPairRDD;
-    private JavaPairRDD<String, Word> indexedWordPairRDD;
-    private JavaPairRDD<String, WordVector> wordVectorPairRDD;
-    private JavaPairRDD<String, WordVector> docWordPairRDD;
+    private JavaPairRDD<String, Word> tfidfRDD;
+    private JavaPairRDD<String, WordVector> wordVectorRDD;
     private JavaPairRDD<Integer, Page> pageRDD;
     private Word2VecModel model;
 
-    public DocSearchModule(){
+    public static DocSearchModule getInstance(){
+        if(instance==null)
+            instance = new DocSearchModule();
+        return instance;
+    }
+
+    private DocSearchModule(){
         init();
     }
 
@@ -43,153 +47,115 @@ public class DocSearchModule implements Serializable{
     }
 
     private void initWordVector(){
-        indexedWordPairRDD = SparkJDBC.getSqlReader(SparkJDBC.TABLE_DOCWORD).select("pageid", "word", "tfidf").toJavaRDD().repartition(Spark.NUM_CORE).map(new Function<Row, Word>() {
-            @Override
-            public Word call(Row v1) throws Exception {
-                int pageId = v1.getInt(0);
-                String word = v1.getString(1);
-                double tfidfValue = v1.getDouble(2);
-                return new Word(pageId, word, tfidfValue);
-            }
-        }).mapToPair(new PairFunction<Word, String, Word>() {
-            @Override
-            public Tuple2<String, Word> call(Word word) throws Exception {
-                return new Tuple2<String, Word>(word.getWord(), word);
-            }
+        //TF-IDF 단어 벡터를 생성한다.
+        tfidfRDD = SparkJDBC.getSqlReader(SparkJDBC.TABLE_DOCWORD).select("pageid","word","tfidf").toJavaRDD().repartition(Spark.NUM_CORE).map(r->{
+            return new Word(r.getInt(0),r.getString(1),r.getDouble(2));
+        }).mapToPair(r->{
+            return new Tuple2<>(r.getWord(),r);
         });
 
-        indexedWordPairRDD.cache();
-        indexedWordPairRDD.count();
+        tfidfRDD.cache();
+        long allWordCnt = tfidfRDD.count();
+        LogInstance.getLogger().info("총 {}개의 단어가 로드되었습니다.",allWordCnt);
 
         model = Word2VecModel.load("./w2model");
-        docWordPairRDD = model.getVectors().select("word", "vector").toJavaRDD().repartition(Spark.NUM_CORE).mapToPair(new PairFunction<Row, String, WordVector>() {
-            @Override
-            public Tuple2<String, WordVector> call(Row row) throws Exception {
-                String word = row.getString(0);
-                Vector vector = (Vector) row.get(1);
-                return new Tuple2<String, WordVector>(word, new WordVector(word, vector));
-            }
+        wordVectorRDD = model.getVectors().select("word", "vector").toJavaRDD().repartition(Spark.NUM_CORE).mapToPair(r->{
+            return new Tuple2<>(r.getString(0),new WordVector(r.getString(0),(Vector)r.get(1)));
         });
 
-        wordVectorPairRDD = docWordPairRDD.repartition(Spark.NUM_CORE).join(indexedWordPairRDD).groupByKey().mapToPair(new PairFunction<Tuple2<String, Iterable<Tuple2<WordVector, Word>>>, String, WordVector>() {
-            @Override
-            public Tuple2<String, WordVector> call(Tuple2<String, Iterable<Tuple2<WordVector, Word>>> stringIterableTuple2) throws Exception {
-                double tfidf = 0;
-                int tfidfCnt = 0;
-                double[] wordVector = null;
+        wordVectorRDD = wordVectorRDD.join(tfidfRDD).groupByKey().mapToPair(tuple->{
+            double[] wordVector = null;
 
-                for(Tuple2<WordVector, Word> wordVectorWord : stringIterableTuple2._2()) {
-                    tfidf += wordVectorWord._2().getTfidf();
-                    wordVector = wordVectorWord._1().getWordVector().toArray();
-                    tfidfCnt++;
-                }
-
-                tfidf /= (double) tfidfCnt;
-
-                for(int i = 0; i< DocVector.dimension; i++)
-                    wordVector[i] *= tfidf;
-
-                return new Tuple2<String, WordVector>(stringIterableTuple2._1(), new WordVector(stringIterableTuple2._1(), new DenseVector(wordVector)));
+            for(Tuple2<WordVector, Word> wordVectorWord : tuple._2()){
+                wordVector = wordVectorWord._1().getWordVector().toArray();
             }
+            return new Tuple2<>(tuple._1(), new WordVector(tuple._1(),new DenseVector(wordVector)));
         });
 
-        wordVectorPairRDD.cache();
-        wordVectorPairRDD.count();
+        wordVectorRDD.cache();
+        wordVectorRDD.count();
     }
 
     private void initDocVectorRDD() {
-        pageRDD = SparkJDBC.getSqlReader(SparkJDBC.TABLE_PAGE).select("id", "url", "title", "body", "date").toJavaRDD().repartition(Spark.NUM_CORE).mapToPair(new PairFunction<Row, Integer, Page>() {
-            @Override
-            public Tuple2<Integer, Page> call(Row row) throws Exception {
-                int id = row.getInt(0);
-                String url = row.getString(1);
-                String title = row.getString(2);
-                String body = row.getString(3);
-                long date = row.getLong(4);
-                return new Tuple2<Integer, Page>(id, new Page(id, url, title, body, date));
-            }
+        pageRDD = SparkJDBC.getSqlReader(SparkJDBC.TABLE_PAGE).select("id", "url", "title", "body", "date").toJavaRDD().repartition(Spark.NUM_CORE).mapToPair(r->{
+            int length = r.getString(3).length();
+            String body = null;
+            if(length>150)
+                body = r.getString(3).substring(0, 150);
+            else
+                body = r.getString(3);
+
+            return new Tuple2<>(r.getInt(0), new Page(r.getInt(0), r.getString(1), r.getString(2), body+"...", r.getLong(4)));
         });
 
         pageRDD.cache();
         pageRDD.count();
 
-        JavaPairRDD<Integer, Iterable<Word>> pairDocWordRDD = indexedWordPairRDD.join(wordVectorPairRDD).repartition(Spark.NUM_CORE).mapToPair(new PairFunction<Tuple2<String, Tuple2<Word, WordVector>>, Integer, Word>() {
-            @Override
-            public Tuple2<Integer, Word> call(Tuple2<String, Tuple2<Word, WordVector>> stringTuple2Tuple2) throws Exception {
-                Word word = new Word(stringTuple2Tuple2._2()._1().getPageId(), stringTuple2Tuple2._1(), stringTuple2Tuple2._2()._1().getTfidf());
-                word.setVector(stringTuple2Tuple2._2()._2().getWordVector());
-                return new Tuple2<Integer, Word>(word.getPageId(), word);
-            }
+        JavaPairRDD<Integer, Iterable<Word>> pairDocWordRDD = tfidfRDD.join(wordVectorRDD).mapToPair(r->{
+                Word word = new Word(r._2()._1().getPageId(), r._1(), r._2()._1().getTfidf());
+                word.setVector(r._2()._2().getWordVector());
+                return new Tuple2<>(word.getPageId(), word);
         }).groupByKey();
 
-        docVectorPairRDD = pairDocWordRDD.mapToPair(new PairFunction<Tuple2<Integer, Iterable<Word>>, Integer, DocVector>() {
-            @Override
-            public Tuple2<Integer, DocVector> call(Tuple2<Integer, Iterable<Word>> integerIterableTuple2) throws Exception {
+        docVectorPairRDD = pairDocWordRDD.mapToPair(tuple->{
                 double[] docVec = new double[DocVector.dimension];
                 int wordCnt = 0;
+                ArrayList<Word> wordList = new ArrayList<>();
 
-                for(Word word : integerIterableTuple2._2()){
+                for(Word word : tuple._2()){
                     wordCnt++;
                     double[] wordVec = word.getVector().toArray();
-                    double tfidf = word.getTfidf();
+                    wordList.add(word);
 
                     for(int i = 0; i< DocVector.dimension; i++)
-                        docVec[i] += (wordVec[i] * tfidf);
+                        docVec[i] += (wordVec[i]);
                 }
 
                 for(int i = 0; i< DocVector.dimension; i++)
                     docVec[i] /= (double) wordCnt;
 
-                DocVector docVector = new DocVector(integerIterableTuple2._1());
-                docVector.setDocVector(new DenseVector(docVec));
 
-                return new Tuple2<Integer, DocVector>(integerIterableTuple2._1(), docVector);
-            }
+                DocVector docVector = new DocVector(tuple._1());
+                docVector.setDocVector(new DenseVector(docVec));
+                docVector.setWordList(wordList);
+
+                return new Tuple2<>(tuple._1(), docVector);
         });
 
-        docVectorPairRDD = docVectorPairRDD.join(pageRDD).mapToPair(new PairFunction<Tuple2<Integer, Tuple2<DocVector, Page>>, Integer, DocVector>() {
-            @Override
-            public Tuple2<Integer, DocVector> call(Tuple2<Integer, Tuple2<DocVector, Page>> integerTuple2Tuple2) throws Exception {
-                DocVector docVector = new DocVector(integerTuple2Tuple2._1());
-                docVector.setDocVector(integerTuple2Tuple2._2()._1().getDocVector());
-                docVector.setPageId(integerTuple2Tuple2._2()._1().getPageId());
-                docVector.setPage(integerTuple2Tuple2._2()._2());
-                return new Tuple2<Integer, DocVector>(integerTuple2Tuple2._1(), docVector);
-            }
+        docVectorPairRDD = docVectorPairRDD.join(pageRDD).mapToPair(tuple->{
+                DocVector docVector = new DocVector(tuple._1());
+                docVector.setDocVector(tuple._2()._1().getDocVector());
+                docVector.setWordList(tuple._2()._1().getWordList());
+                docVector.setPageId(tuple._2()._1().getPageId());
+                docVector.setPage(tuple._2()._2());
+                return new Tuple2<>(tuple._1(), docVector);
         });
 
         docVectorPairRDD.cache();
         docVectorPairRDD.count();
     }
 
-    public ArrayList<String> getRelativeWord(SearchWord searchWord){
-        ArrayList<String> simWords = new ArrayList<>();
+    public ArrayList<ResultWord> getRelativeWord(SearchWord searchWord){
+        ArrayList<ResultWord> simWords = new ArrayList<>();
         final double[] wordVec = searchWord.getVector().toArray();
         final HashSet<String> searchWordList = searchWord.getWordIdxList();
 
-        List<Tuple2<Double, WordVector>> similarWordList = wordVectorPairRDD.filter(new Function<Tuple2<String, WordVector>, Boolean>() {
-            @Override
-            public Boolean call(Tuple2<String, WordVector> v1) throws Exception {
-                if(searchWordList.contains(v1._1()))
+        List<Tuple2<Double, WordVector>> similarWordList = wordVectorRDD.filter(tuple->{
+                if(searchWordList.contains(tuple._1()))
                     return false;
                 else
                     return true;
-            }
-        }).mapToPair(new PairFunction<Tuple2<String,WordVector>, Double, WordVector>() {
-            @Override
-            public Tuple2<Double, WordVector> call(Tuple2<String, WordVector> stringWordVectorTuple2){
+        }).mapToPair(tuple->{
                 double similarity = 0;
-                double[] secondVal = stringWordVectorTuple2._2().getWordVector().toArray();
+                double[] secondVal = tuple._2().getWordVector().toArray();
                 for(int i = 0; i< DocVector.dimension; i++)
                     similarity+=Math.pow(secondVal[i]-wordVec[i],2);
                 similarity = Math.sqrt(similarity);
-                return new Tuple2<Double, WordVector>(similarity,stringWordVectorTuple2._2());
-            }
+                return new Tuple2<Double, WordVector>(similarity,tuple._2());
         }).sortByKey(true).take(10);
-        for(int i=0; i<similarWordList.size(); i++) {
-            simWords.add(i, similarWordList.get(i)._2().getWord());
-            System.out.println(similarWordList.get(i)._2().getWord());
-        }
+
+        for(int i=0; i<similarWordList.size(); i++)
+            simWords.add(i, new ResultWord(similarWordList.get(i)._2().getWord(),similarWordList.get(i)._1()));
 
         return simWords;
     }
@@ -197,14 +163,11 @@ public class DocSearchModule implements Serializable{
     private SearchWord getQueryVector(String query){
         final HashSet<String> querySet = splitQueryString(query);
         HashSet<String> searchWordList = new HashSet<>();
-        List<WordVector> wordVectorList = wordVectorPairRDD.filter(new Function<Tuple2<String, WordVector>, Boolean>() {
-            @Override
-            public Boolean call(Tuple2<String, WordVector> v1) throws Exception {
-                if(querySet.contains(v1._1()))
+        List<WordVector> wordVectorList = wordVectorRDD.filter(tuple->{
+                if(querySet.contains(tuple._1()))
                     return true;
                 else
                     return false;
-            }
         }).values().collect();
 
         double[] searchWordVector = new double[DocVector.dimension];
@@ -234,28 +197,43 @@ public class DocSearchModule implements Serializable{
         return hashSet;
     }
 
-    public OutboundData search(String query) {
+    public SearchResult search(String query) {
         SearchWord searchWord = getQueryVector(query);
 
-        OutboundData outboundData = new OutboundData(getRelativeWord(searchWord), getRelativeDoc(searchWord));
-        return outboundData;
+        return new SearchResult(getRelativeWord(searchWord),getRelativeDoc(searchWord));
     }
 
     private ArrayList<Page> getRelativeDoc(SearchWord searchWord){
         ArrayList<Page> simDoc = new ArrayList<>();
-        final double[] swVec = searchWord.getVector().toArray();
-        List<Tuple2<Double, DocVector>> docList = docVectorPairRDD.mapToPair(new PairFunction<Tuple2<Integer, DocVector>, Double, DocVector>() {
-            @Override
-            public Tuple2<Double, DocVector> call(Tuple2<Integer, DocVector> integerDocVectorTuple2) throws Exception {
-                double[] docVec = integerDocVectorTuple2._2().getDocVector().toArray();
-                double similarity = 0;
-                for(int i = 0; i< DocVector.dimension; i++)
-                    similarity = Math.pow(docVec[i]-swVec[i], 2);
-                similarity = Math.sqrt(similarity);
-                return new Tuple2<Double, DocVector>(similarity, integerDocVectorTuple2._2());
+        final int wordCnt = searchWord.getWordIdxList().size();
+        final HashSet<String> wordSet = searchWord.getWordIdxList();
+
+        List<Tuple2<Double, DocVector>> docList = docVectorPairRDD.filter(tuple->{
+            DocVector docVector = tuple._2();
+            int currentCnt = 0;
+            if(docVector== null || docVector.getWordList()==null || docVector.getWordList().size()==0)
+                return false;
+
+            for(Word word : docVector.getWordList()){
+                if(wordSet.contains(word.getWord()))
+                    currentCnt++;
             }
-        }).sortByKey(true).take(10);
-        for(int i=0; i<docList.size(); i++) {
+            if(currentCnt==wordCnt)
+                return true;
+            else
+                return false;
+        }).mapToPair(tuple->{
+            double tfidfSimilarity = 0;
+            ArrayList<Word> wordList = tuple._2().getWordList();
+
+            for(Word word : wordList){
+                if(wordSet.contains(word.getWord()))
+                    tfidfSimilarity += word.getTfidf();
+            }
+            return new Tuple2<>(tfidfSimilarity, tuple._2());
+        }).sortByKey().take(50);
+
+        for(int i=0; i<docList.size(); i++){
             simDoc.add(i, docList.get(i)._2().getPage());
         }
         return simDoc;

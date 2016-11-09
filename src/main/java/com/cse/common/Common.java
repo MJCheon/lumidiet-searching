@@ -5,12 +5,4 @@ package com.cse.common;
  */
 public class Common {
     public static int ERROR = -1;
-    private static int sleepTime = 1000;
-    public static void sleep(){
-        try {
-            Thread.sleep(sleepTime);
-        } catch (Exception e) {
-
-        }
-    }
 }

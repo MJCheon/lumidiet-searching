@@ -11,33 +11,30 @@ import java.io.Serializable;
 public class Spark implements Serializable {
     private static JavaSparkContext javaSparkContext;
     public static SparkConf sparkConf;
-    public static final String APP_NAME = "lumidiet-searching";
-    public static final String LOCAL_MASTER = "local[8]";
-    public static final String MASTER = "";
-    public static final int NUM_CORE = 8;
-    public static boolean isLocal = true;
+    public static final String APP_NAME = "lumidiet-learning";
+    public static final int NUM_CORE = 16;
+    public static final int MEMORY = 32;
+    public static final String MASTER = "local["+Integer.toString(NUM_CORE)+"]";
 
     static{
-        if(!isLocal) {
-            sparkConf = new SparkConf().setAppName(APP_NAME).setMaster(MASTER);
-            sparkConf.set("spark.default.parallelism", "16");
-            sparkConf.set("spark.cores.max", "16");
-            sparkConf.set("spark.driver.memory", "2g");
-            sparkConf.set("spark.executor.memory", "16g");
-            sparkConf.set("spark.executor.cores", "8");
-        }
-        else{
-            sparkConf = new SparkConf().setAppName(APP_NAME).setMaster(LOCAL_MASTER);
-            sparkConf.set("spark.rpc.askTimeout", "120");
-            sparkConf.set("spark.default.parallelism", "8");
-            sparkConf.set("spark.driver.memory", "16g");
-            sparkConf.set("spark.executor.memory", "16g");
-            sparkConf.set("spark.executor.cores", "8");
-        }
+        sparkConf = new SparkConf().setAppName(APP_NAME).setMaster(MASTER);
+        sparkConf.set("spark.rpc.askTimeout", "120");
+        sparkConf.set("spark.default.parallelism", Integer.toString(NUM_CORE));
+        sparkConf.set("spark.driver.memory", Integer.toString(MEMORY)+"g");
+        sparkConf.set("spark.executor.memory", Integer.toString(MEMORY)+"g");
+        sparkConf.set("spark.executor.cores", Integer.toString(NUM_CORE));
+
         javaSparkContext = new JavaSparkContext(sparkConf);
     }
 
     public static JavaSparkContext getJavaSparkContext(){
         return javaSparkContext;
+    }
+
+    public static void shutdown(){
+        if(javaSparkContext!=null) {
+            javaSparkContext.stop();
+            javaSparkContext = null;
+        }
     }
 }

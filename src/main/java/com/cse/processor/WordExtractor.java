@@ -20,27 +20,27 @@ import java.util.List;
  * Created by bullet on 16. 10. 25.
  */
 public class WordExtractor implements Serializable{
-    public List<Word> extractWordFromParagraph(int pageId, String body){
-        Hashtable<String, InnerWord> innerWordHashTable = new Hashtable<>();
-        double allCnt = 0;
+    private static String allJosa = "었,께서,에서,에게,보다,라고,이여,이시여,마따나,이며,부터,로부터,으로부터,야말로,이라며," +
+            "라며,라서,로서,로써,에다,까지,마저,조차,따라,토록,커녕,든지,이든지,나마,이나마,았";
+
+    public static List<String> extractWordList(String body){
         List<KoreanTokenJava> stemmedLinelist = stemmingLine(body);
         ArrayList<String> nameList = initNameList(extractPhrases(body));
 
-        if(stemmedLinelist.size() == 0)
-            return null;
+        List<String> wordList = Lists.newArrayList();
 
         for(int i=0; i<stemmedLinelist.size(); i++) {
-            KoreanTokenJava koreanTokenJava = stemmedLinelist.get(i);
+            KoreanTokenJava token = stemmedLinelist.get(i);
             String word = "";
-            if ((koreanTokenJava.getPos().equals(KoreanPosJava.Noun) || koreanTokenJava.getPos().equals(KoreanPosJava.ProperNoun))) {
-                word = koreanTokenJava.getText();
-                if (koreanTokenJava.getLength() > 1) {  // 2글자 이상의 명사 출력 ("12경기" 같은 것도 포함)
+            if ((token.getPos().equals(KoreanPosJava.Noun) || token.getPos().equals(KoreanPosJava.ProperNoun))) {
+                word = token.getText();
+                if (token.getLength() > 1) {  // 2글자 이상의 명사 출력 ("12경기" 같은 것도 포함)
                     if (i != 0 && stemmedLinelist.get(i - 1).getPos().equals(KoreanPosJava.Number)) {
                         if (!isTime(stemmedLinelist.get(i - 1)))
                             word = stemmedLinelist.get(i - 1).getText() + word;
                     }
                 }
-                else if (koreanTokenJava.getLength() == 1) {    // "1세" 같은 것 출력
+                else if (token.getLength() == 1) {    // "1세" 같은 것 출력
                     if (i != 0 && stemmedLinelist.get(i - 1).getPos().equals(KoreanPosJava.Number)) {
                         if (!isTime(stemmedLinelist.get(i - 1)))
                             word = stemmedLinelist.get(i - 1).getText() + word;
@@ -48,9 +48,58 @@ public class WordExtractor implements Serializable{
                     else
                         word = "";
                 }
-            } else if (koreanTokenJava.getPos().equals(KoreanPosJava.Number) && koreanTokenJava.getLength() > 1) {      // 년월일 같은 것들 출력
-                if (isTime(koreanTokenJava))
-                    word = koreanTokenJava.getText();
+            } else if (token.getPos().equals(KoreanPosJava.Number) && token.getLength() > 1) {      // 년월일 같은 것들 출력
+                if (isTime(token))
+                    word = token.getText();
+            }
+            else
+                word = "";
+
+            if(word.equals(""))
+                continue;
+
+            word = foundName(nameList, word);
+            word = removeJosa(word);
+
+            wordList.add(word);
+        }
+
+        return wordList;
+    }
+
+    public static List<Word> extractWordFromParagraph(int pageId, String body){
+        Hashtable<String, InnerWord> innerWordHashTable = new Hashtable<>();
+        double allCnt = 0;
+        List<KoreanTokenJava> stemmedLinelist = stemmingLine(body);
+        ArrayList<String> nameList = initNameList(extractPhrases(body));
+
+
+
+        if(stemmedLinelist.size() == 0)
+            return null;
+
+        for(int i=0; i<stemmedLinelist.size(); i++) {
+            KoreanTokenJava token = stemmedLinelist.get(i);
+            String word = "";
+            if ((token.getPos().equals(KoreanPosJava.Noun) || token.getPos().equals(KoreanPosJava.ProperNoun))) {
+                word = token.getText();
+                if (token.getLength() > 1) {  // 2글자 이상의 명사 출력 ("12경기" 같은 것도 포함)
+                    if (i != 0 && stemmedLinelist.get(i - 1).getPos().equals(KoreanPosJava.Number)) {
+                        if (!isTime(stemmedLinelist.get(i - 1)))
+                            word = stemmedLinelist.get(i - 1).getText() + word;
+                    }
+                }
+                else if (token.getLength() == 1) {    // "1세" 같은 것 출력
+                    if (i != 0 && stemmedLinelist.get(i - 1).getPos().equals(KoreanPosJava.Number)) {
+                        if (!isTime(stemmedLinelist.get(i - 1)))
+                            word = stemmedLinelist.get(i - 1).getText() + word;
+                    }
+                    else
+                        word = "";
+                }
+            } else if (token.getPos().equals(KoreanPosJava.Number) && token.getLength() > 1) {      // 년월일 같은 것들 출력
+                if (isTime(token))
+                    word = token.getText();
             }
             else
                 word = "";
@@ -112,7 +161,6 @@ public class WordExtractor implements Serializable{
     }
 
     private static String removeJosa(String word){
-        String allJosa = "었,께서,에서,에게,보다,라고,이여,이시여,마따나,이며,부터,로부터,으로부터,야말로,이라며,라며,라서,로서,로써,에다,까지,마저,조차,따라,토록,커녕,든지,이든지,나마,이나마,았";
         String josaList[] = allJosa.split("\\,");
         for(String josa : josaList){
             if(word.contains(josa))
@@ -130,11 +178,10 @@ public class WordExtractor implements Serializable{
                 nameList.add(word);
             }
         }
-
         return nameList;
     }
 
-    private String foundName(ArrayList<String> nameList, String word){
+    private static String foundName(ArrayList<String> nameList, String word){
         for(String name : nameList){
             if(name.contains(word))
                 return name;

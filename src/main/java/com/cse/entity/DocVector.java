@@ -10,14 +10,13 @@ import java.util.ArrayList;
  */
 public class DocVector implements Serializable{
     private int pageId;
-    private ArrayList<TfIdfWord> wordIdxList;
+    private ArrayList<Word> wordList;
     private Vector docVector;
     private Page page;
     public static final int dimension = 200;
 
     public DocVector(int pageId){
         this.pageId = pageId;
-        this.wordIdxList = new ArrayList<>();
     }
 
     public void setPageId(int pageId){
@@ -28,12 +27,12 @@ public class DocVector implements Serializable{
         return this.pageId;
     }
 
-    public void setWordIdxList(ArrayList<TfIdfWord> wordIdxList){
-        this.wordIdxList = wordIdxList;
+    public ArrayList<Word> getWordList() {
+        return wordList;
     }
 
-    public ArrayList<TfIdfWord> getWordIdxList(){
-        return this.wordIdxList;
+    public void setWordList(ArrayList<Word> wordList) {
+        this.wordList = wordList;
     }
 
     public void setDocVector(Vector docVector){

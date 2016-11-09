@@ -105,19 +105,4 @@ public class Word implements Serializable{
     public Vector getVector(){
         return this.vector;
     }
-
-    public static StructType getStructType(){
-        return new StructType(new StructField[]{
-                new StructField("id", DataTypes.LongType, false, Metadata.empty()),
-                new StructField("pageid", DataTypes.IntegerType, false, Metadata.empty()),
-                new StructField("word", DataTypes.StringType, false, Metadata.empty()),
-                new StructField("cnt", DataTypes.DoubleType, false, Metadata.empty()),
-                new StructField("tf", DataTypes.DoubleType, false, Metadata.empty()),
-                new StructField("tfidf", DataTypes.DoubleType, false, Metadata.empty())
-        });
-    }
-
-    public Row wordToRow(){
-        return RowFactory.create(id, pageId, word, cnt, tf, tfidf);
-    }
 }

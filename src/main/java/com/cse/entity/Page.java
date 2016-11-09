@@ -19,17 +19,6 @@ public class Page implements Serializable{
     private String title;
     private String body;
 
-    public Page(){
-    }
-
-    public Page(int id, String url, String body){
-        this.id = id;
-        this.url = url;
-        this.body = body;
-        this.title = null;
-        this.date = 0;
-    }
-
     public Page(int id, String url, String title, String body, long date){
         this.id = id;
         this.url = url;
@@ -77,19 +66,4 @@ public class Page implements Serializable{
     public void setDate(long date){
         this.date = date;
     }
-
-    public static StructType getStructType(){
-        return new StructType(new StructField[]{
-                new StructField("id", DataTypes.IntegerType, false, Metadata.empty()),
-                new StructField("url", DataTypes.StringType, false, Metadata.empty()),
-                new StructField("title", DataTypes.StringType, false, Metadata.empty()),
-                new StructField("body", DataTypes.StringType, false, Metadata.empty()),
-                new StructField("date", DataTypes.LongType, false, Metadata.empty())
-        });
-    }
-
-    public Row pageToRow(){
-        return RowFactory.create(id, url, title, body, date);
-    }
-
 }
