@@ -12,18 +12,31 @@ import java.net.URI;
 
 /**
  * Created by leeyh on 2016. 11. 7..
+ * Searching Server에 대한 클래스
  */
 public class SearchServer {
-    private URI mainUri;
-    private ResourceConfig resourceConfig;
+    private static URI mainUri;
+    private static ResourceConfig resourceConfig;
     private HttpServer httpServer;
+    public static String serverIP = null;
+    public static String serverPort = null;
+    private static String host = null;
 
-    public SearchServer(String host){
+    public SearchServer(){
+        if(serverIP != null && serverPort != null)
+            initServer();
+
+    }
+
+    private static void initServer(){
+        host = "http://"+serverIP+":"+serverPort;
         mainUri = URI.create(host);
         resourceConfig = new PackagesResourceConfig("com.cse.network");
     }
 
     public void startServer() throws IOException{
+        if(host == null)
+            initServer();
         httpServer = GrizzlyServerFactory.createHttpServer(mainUri,resourceConfig);
     }
 

@@ -7,9 +7,16 @@ import java.util.HashSet;
 
 /**
  * Created by bullet on 16. 10. 25.
+ * 사용자의 검색어에 대한 클래스
  */
 public class SearchWord implements Serializable{
+    /**
+     * 사용자의 검색 쿼리에 대한 벡터
+     */
     private Vector vector;
+    /**
+     * 사용자의 검색 쿼리에 있는 단어 List
+     */
     private HashSet<String> wordList;
 
     public SearchWord(Vector vector, HashSet<String> wordList){

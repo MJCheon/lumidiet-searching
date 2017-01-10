@@ -4,6 +4,7 @@ import java.io.Serializable;
 
 /**
  * Created by bullet on 16. 10. 25.
+ * 사용자의 검색에 대한 유사 단어 클래스
  */
 public class ResultWord implements Serializable {
     private String text;

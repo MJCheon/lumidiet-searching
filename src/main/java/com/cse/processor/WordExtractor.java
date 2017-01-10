@@ -18,6 +18,8 @@ import java.util.List;
 
 /**
  * Created by bullet on 16. 10. 25.
+ * 단어 추출하는 클래스
+ * Learning Module API 참조
  */
 public class WordExtractor implements Serializable{
     private static String allJosa = "었,께서,에서,에게,보다,라고,이여,이시여,마따나,이며,부터,로부터,으로부터,야말로,이라며," +
@@ -52,8 +54,6 @@ public class WordExtractor implements Serializable{
                 if (isTime(token))
                     word = token.getText();
             }
-            else
-                word = "";
 
             if(word.equals(""))
                 continue;
@@ -72,8 +72,6 @@ public class WordExtractor implements Serializable{
         double allCnt = 0;
         List<KoreanTokenJava> stemmedLinelist = stemmingLine(body);
         ArrayList<String> nameList = initNameList(extractPhrases(body));
-
-
 
         if(stemmedLinelist.size() == 0)
             return null;

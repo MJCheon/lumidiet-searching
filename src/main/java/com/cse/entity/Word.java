@@ -12,6 +12,7 @@ import java.io.Serializable;
 
 /**
  * Created by bullet on 16. 10. 25.
+ * 단어에 대한 클래스
  */
 public class Word implements Serializable{
     private long id;

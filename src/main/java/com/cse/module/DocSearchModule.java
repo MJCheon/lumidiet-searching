@@ -21,6 +21,7 @@ import java.util.List;
 
 /**
  * Created by bullet on 16. 10. 25.
+ * 검색한 단어에 대한 유사 단어 및 문서를 찾아줌
  */
 public class DocSearchModule implements Serializable{
     private static DocSearchModule instance;
@@ -46,6 +47,10 @@ public class DocSearchModule implements Serializable{
         initDocVectorRDD();
     }
 
+    /**
+     * 단어 벡터 생성
+     * 단어에 대한 TF-IDF 값과 학습된 모델에서 Vector값을 읽어들어옴
+     */
     private void initWordVector(){
         //TF-IDF 단어 벡터를 생성한다.
         tfidfRDD = SparkJDBC.getSqlReader(SparkJDBC.TABLE_DOCWORD).select("pageid","word","tfidf").toJavaRDD().repartition(Spark.NUM_CORE).map(r->{
@@ -63,19 +68,14 @@ public class DocSearchModule implements Serializable{
             return new Tuple2<>(r.getString(0),new WordVector(r.getString(0),(Vector)r.get(1)));
         });
 
-        wordVectorRDD = wordVectorRDD.join(tfidfRDD).groupByKey().mapToPair(tuple->{
-            double[] wordVector = null;
-
-            for(Tuple2<WordVector, Word> wordVectorWord : tuple._2()){
-                wordVector = wordVectorWord._1().getWordVector().toArray();
-            }
-            return new Tuple2<>(tuple._1(), new WordVector(tuple._1(),new DenseVector(wordVector)));
-        });
-
         wordVectorRDD.cache();
         wordVectorRDD.count();
     }
 
+    /**
+     * 문서 벡터 생성
+     * 단어 벡터를 이용하여 페이지를 구성하는 단어의 벡터 값의 평균값을 문서 벡터로 사용
+     */
     private void initDocVectorRDD() {
         pageRDD = SparkJDBC.getSqlReader(SparkJDBC.TABLE_PAGE).select("id", "url", "title", "body", "date").toJavaRDD().repartition(Spark.NUM_CORE).mapToPair(r->{
             int length = r.getString(3).length();
@@ -135,6 +135,11 @@ public class DocSearchModule implements Serializable{
         docVectorPairRDD.count();
     }
 
+    /**
+     * 사용자가 검색한 단어에 대한 유사 단어 검색
+     * @param searchWord 사용자가 검색한 단어
+     * @return
+     */
     public ArrayList<ResultWord> getRelativeWord(SearchWord searchWord){
         ArrayList<ResultWord> simWords = new ArrayList<>();
         final double[] wordVec = searchWord.getVector().toArray();
@@ -160,6 +165,11 @@ public class DocSearchModule implements Serializable{
         return simWords;
     }
 
+    /**
+     * 사용자가 검색한 쿼리에 대한 단어 추출 및 벡터 값 계산
+     * @param query 사용자가 검색한 쿼리
+     * @return
+     */
     private SearchWord getQueryVector(String query){
         final HashSet<String> querySet = splitQueryString(query);
         HashSet<String> searchWordList = new HashSet<>();
@@ -183,11 +193,10 @@ public class DocSearchModule implements Serializable{
         return new SearchWord(new DenseVector(searchWordVector), searchWordList);
     }
 
-    private HashSet<String> splitQueryString(String query){
+    public HashSet<String> splitQueryString(String query){
         HashSet<String> hashSet = new HashSet<>();
 
-        WordExtractor wordExtractor = new WordExtractor();
-        List<Word> words = wordExtractor.extractWordFromParagraph(0, query);
+        List<Word> words = WordExtractor.extractWordFromParagraph(0, query);
 
         for(Word word : words){
             String strWord = word.getWord();
@@ -197,12 +206,24 @@ public class DocSearchModule implements Serializable{
         return hashSet;
     }
 
+    /**
+     * 검색 메소드
+     * @param query 사용자가 검색한 쿼리
+     * @return
+     */
     public SearchResult search(String query) {
         SearchWord searchWord = getQueryVector(query);
 
         return new SearchResult(getRelativeWord(searchWord),getRelativeDoc(searchWord));
     }
 
+    /**
+     * 사용자가 검색한 단어와 유사한 문서를 찾음
+     * 사용자가 검색한 단어를 포함하고 있고, 페이지를 구성하는 단어들의 TF-IDF 값을 이용해
+     * 유클리디안 유사도를 사용하여 가장 가까운 문서 검색
+     * @param searchWord 사용자가 검색한 단어
+     * @return
+     */
     private ArrayList<Page> getRelativeDoc(SearchWord searchWord){
         ArrayList<Page> simDoc = new ArrayList<>();
         final int wordCnt = searchWord.getWordIdxList().size();

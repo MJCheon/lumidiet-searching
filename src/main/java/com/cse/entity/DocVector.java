@@ -7,6 +7,7 @@ import java.util.ArrayList;
 
 /**
  * Created by bullet on 16. 10. 25.
+ * 문서 벡터에 대한 클래스
  */
 public class DocVector implements Serializable{
     private int pageId;
